@@ -37,13 +37,15 @@ class DHTRequestHandler(SocketServer.BaseRequestHandler):
                 self.handle_store(message)
         except KeyError, ValueError:
             pass
-        client_host, client_port = self.client_address
+        client_host = self.client_address[0]
+        client_port = self.client_address[1]
         peer_id = message["peer_id"]
         new_peer = Peer(client_host, client_port, peer_id)
         self.server.dht.buckets.insert(new_peer)
 
     def handle_ping(self, message):
-        client_host, client_port = self.client_address
+        client_host = self.client_address[0]
+        client_port = self.client_address[1]
         id = message["peer_id"]
         peer = Peer(client_host, client_port, id)
         peer.pong(socket=self.server.socket, peer_id=self.server.dht.peer.id, lock=self.server.send_lock)
@@ -54,7 +56,8 @@ class DHTRequestHandler(SocketServer.BaseRequestHandler):
     def handle_find(self, message, find_value=False):
         key = message["id"]
         id = message["peer_id"]
-        client_host, client_port = self.client_address
+        client_host = self.client_address[0]
+        client_port = self.client_address[1]
         peer = Peer(client_host, client_port, id)
         response_socket = self.request[1]
         if find_value and (key in self.server.dht.data):
@@ -86,7 +89,8 @@ class DHTRequestHandler(SocketServer.BaseRequestHandler):
 
 
 class DHTServer(SocketServer.ThreadingMixIn, SocketServer.UDPServer):
-    def __init__(self, host_address, handler_cls):
+    def __init__(self, host_address, handler_cls, ipv6):
+	self.address_family = socket.AF_INET6 if ipv6 else socket.AF_INET
         SocketServer.UDPServer.__init__(self, host_address, handler_cls)
         self.send_lock = threading.Lock()
 
@@ -94,11 +98,12 @@ class DHT(object):
     def __init__(self, host, port, id=None, boot_host=None, boot_port=None):
         if not id:
             id = random_id()
+	ipv6 = True
         self.peer = Peer(unicode(host), port, id)
         self.data = {}
         self.buckets = BucketSet(k, id_bits, self.peer.id)
         self.rpc_ids = {} # should probably have a lock for this
-        self.server = DHTServer(self.peer.address(), DHTRequestHandler)
+        self.server = DHTServer(self.peer.address(), DHTRequestHandler, ipv6)
         self.server.dht = self
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.daemon = True
